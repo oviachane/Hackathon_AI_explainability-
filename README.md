@@ -2,11 +2,10 @@
 
 This project delivers a responsible HR AI dashboard that identifies the **top 5 active employees most likely to resign**, estimates a **probable reason category**, and suggests **recommended HR actions** to reduce attrition risk.
 
-The solution is intentionally aligned with three hackathon themes:
+The solution is intentionally aligned with two hackathon themes:
 
 - `Explainable AI`
 - `Ethical AI`
-- `Frugal AI` as a light bonus
 
 ## Product Goal
 
@@ -91,10 +90,10 @@ The dashboard converts the probable reason and the main risk drivers into concre
   - `HispanicLatino`
 - Sensitive attributes are kept only for post-model fairness checks.
 
-### Frugal AI
+### Model Selection
 
-- A lightweight **Logistic Regression** model is benchmarked against **Random Forest**.
-- Logistic Regression is retained because it is strong, fast, lightweight, and easier to govern.
+- **Logistic Regression** is the deployed model because it offers transparent employee-level explanations.
+- A comparison with **Random Forest** is used only to justify the final deployment choice, not as a separate hackathon theme.
 
 ## Data Card
 
@@ -119,7 +118,7 @@ The dashboard converts the probable reason and the main risk drivers into concre
 | Item | Summary |
 | --- | --- |
 | Primary model | Logistic Regression |
-| Benchmark comparator | Random Forest |
+| Evaluation comparator | Random Forest |
 | Training target | Voluntary turnover risk (`Termd`) |
 | Features used | Role, department, salary, recruitment source, performance, engagement, satisfaction, projects, lateness, absences, age at review, tenure at review, state |
 | Sensitive features in training | None |
@@ -137,7 +136,7 @@ The dashboard converts the probable reason and the main risk drivers into concre
 
 ## Results Summary
 
-### Risk model benchmark
+### Risk model comparison
 
 | Model | ROC-AUC | Average Precision | Accuracy | Precision | Recall | F1 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -150,7 +149,7 @@ Reason:
 - nearly the same ranking quality as Random Forest;
 - better recall/F1 balance for retention use;
 - much simpler to explain in a jury setting;
-- more frugal and easier to deploy.
+- easier to govern in an HR decision-support setting.
 
 ## Fairness Snapshot
 
@@ -211,7 +210,7 @@ python3 -m streamlit run app.py
 
 The dashboard is designed for a short oral defense:
 
-1. Show the benchmark and justify the choice of Logistic Regression.
+1. Show the model comparison and justify the choice of Logistic Regression.
 2. Show the top 5 active employees at risk.
 3. Open one employee profile and explain:
    - the risk score;
@@ -230,4 +229,4 @@ The dashboard is designed for a short oral defense:
 
 ## Pitch
 
-We built a responsible HR AI dashboard that helps HR act before employees leave. The system ranks the top 5 active employees most likely to resign, estimates a probable reason by comparing them to similar historical leavers, and translates the result into concrete retention actions. We deliberately chose a Logistic Regression model because it stays highly competitive while remaining transparent, lightweight, and easy to defend. Sensitive attributes are excluded from training, fairness is audited separately, and all outputs are framed as decision support rather than automated HR decisions.
+We built a responsible HR AI dashboard that helps HR act before employees leave. The system ranks the top 5 active employees most likely to resign, estimates a probable reason by comparing them to similar historical leavers, and translates the result into concrete retention actions. We deliberately chose a Logistic Regression model because it stays highly competitive while remaining transparent and easy to defend. Sensitive attributes are excluded from training, fairness is audited separately, and all outputs are framed as decision support rather than automated HR decisions.

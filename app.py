@@ -75,6 +75,12 @@ REASON_GROUP_MAP = {
     "retiring": "Personal/External",
 }
 
+REASON_DISPLAY_MAP = {
+    "Compensation/Career": "Compensation or career",
+    "Work Conditions/Engagement": "Work conditions or engagement",
+    "Personal/External": "Personal or external factors",
+}
+
 
 def anonymize_employee_names(frame: pd.DataFrame) -> pd.DataFrame:
     anonymized = frame.copy()
@@ -557,37 +563,64 @@ def build_dashboard_assets():
 
 
 def build_top5_table(top5: pd.DataFrame) -> pd.DataFrame:
-    display = top5[
-        [
-            "Employee_Alias",
-            "EmpID",
-            "Department",
-            "Position",
-            "risk_score",
-            "probable_reason_group",
-            "reason_confidence",
-            "similar_raw_reasons",
-        ]
-    ].copy()
-    display["risk_score"] = (display["risk_score"] * 100).round(1).astype(str) + "%"
-    display["reason_confidence"] = (display["reason_confidence"] * 100).round(1).astype(str) + "%"
-    return display.rename(
-        columns={
-            "Employee_Alias": "Employee",
-            "EmpID": "EmpID",
-            "Department": "Department",
-            "Position": "Position",
-            "risk_score": "Turnover risk",
-            "probable_reason_group": "Probable reason",
-            "reason_confidence": "Reason confidence",
-            "similar_raw_reasons": "Closest historical reasons",
-        }
+    display = top5.reset_index(drop=True).copy()
+    display["Priority"] = display.index + 1
+    display["Employee"] = display.apply(format_employee_label, axis=1)
+    display["Risk"] = display["risk_score"].map(lambda x: f"{x:.0%}")
+    display["Priority level"] = display["risk_score"].map(risk_priority_label)
+    display["Likely reason"] = display["probable_reason_group"].map(reason_display_label)
+    display["First HR action"] = display["recommended_actions"].map(
+        lambda actions: shorten_text(actions[0], 90) if actions else ""
     )
+    display = display.rename(columns={"Position": "Role"})
+    return display[
+        [
+            "Priority",
+            "Employee",
+            "Department",
+            "Role",
+            "Risk",
+            "Priority level",
+            "Likely reason",
+            "First HR action",
+        ]
+    ]
+
+
+def reason_display_label(reason_group: str) -> str:
+    return REASON_DISPLAY_MAP.get(reason_group, reason_group)
+
+
+def risk_priority_label(score: float) -> str:
+    if score >= 0.75:
+        return "Immediate action"
+    if score >= 0.55:
+        return "High priority"
+    return "Monitor"
+
+
+def format_employee_label(row: pd.Series) -> str:
+    return f"{row['Employee_Alias']} (EmpID: {int(row['EmpID'])})"
+
+
+def top_theme_label(top5: pd.DataFrame) -> str:
+    if top5.empty:
+        return "N/A"
+    return reason_display_label(top5["probable_reason_group"].mode().iloc[0])
+
+
+def shorten_text(text: str, max_length: int) -> str:
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3].rstrip() + "..."
 
 
 def reason_distribution_chart(reason_distribution: Dict[str, float]) -> go.Figure:
     frame = pd.DataFrame(
-        {"Reason group": list(reason_distribution.keys()), "Probability": list(reason_distribution.values())}
+        {
+            "Reason group": [reason_display_label(reason) for reason in reason_distribution.keys()],
+            "Probability": list(reason_distribution.values()),
+        }
     )
     figure = px.bar(
         frame.sort_values("Probability", ascending=True),
@@ -618,7 +651,7 @@ def risk_gauge(score: float) -> go.Figure:
                     {"range": [65, 100], "color": "#fee2e2"},
                 ],
             },
-            title={"text": "Predicted turnover risk"},
+            title={"text": "Risk of leaving"},
         )
     )
     figure.update_layout(height=260, margin=dict(l=10, r=10, t=40, b=10))
@@ -643,8 +676,7 @@ def main():
     st.set_page_config(page_title="HR Turnover Retention Dashboard", layout="wide")
     st.title("HR Turnover Retention Dashboard")
     st.caption(
-        "Goal: identify the top 5 active employees most likely to resign, estimate a probable reason, "
-        "and suggest concrete HR actions."
+        "Quick HR view: identify who needs attention first, why they may leave, and what to do now."
     )
 
     assets = build_dashboard_assets()
@@ -656,134 +688,148 @@ def main():
     top5 = assets["top5"]
 
     avg_top5_risk = top5["risk_score"].mean()
+    highest_risk = float(top5["risk_score"].max()) if not top5.empty else 0.0
 
     metric_col_1, metric_col_2, metric_col_3, metric_col_4 = st.columns(4)
-    metric_col_1.metric("Employees modeled", len(dataset))
-    metric_col_2.metric("Active employees scored", int((dataset[TARGET] == 0).sum()))
-    metric_col_3.metric("Top 5 average risk", f"{avg_top5_risk:.1%}")
-    metric_col_4.metric("Primary model", "Logistic Regression")
+    metric_col_1.metric("Active employees reviewed", int((dataset[TARGET] == 0).sum()))
+    metric_col_2.metric("Employees to review now", len(top5))
+    metric_col_3.metric("Highest risk in Top 5", f"{highest_risk:.0%}")
+    metric_col_4.metric("Most common risk theme", top_theme_label(top5))
 
-    overview_tab, employee_tab, responsible_ai_tab = st.tabs(
-        ["Dashboard Overview", "Employee Deep Dive", "Responsible AI"]
+    st.info(
+        "Reading guide for HR: start with the Top 5 priority list, then open one employee sheet to review "
+        "the likely reason and the recommended retention actions."
     )
 
+    overview_tab, employee_tab, responsible_ai_tab = st.tabs(["HR Priority View", "Employee Sheet", "Responsible AI"])
+
     with overview_tab:
-        left_col, right_col = st.columns([1.0, 1.4])
+        st.subheader("Top 5 priority list")
+        st.dataframe(build_top5_table(top5), use_container_width=True, hide_index=True)
+        st.caption(
+            "The risk score is a probability of voluntary turnover. It is used to prioritize HR follow-up, "
+            "not to automate decisions."
+        )
 
-        with left_col:
-            st.subheader("Model benchmark")
-            st.dataframe(benchmark, use_container_width=True, hide_index=True)
-
-            risk_histogram = px.histogram(
-                leaderboard,
-                x="risk_score",
-                nbins=20,
-                title="Distribution of predicted turnover risk across active employees",
-                labels={"risk_score": "Predicted risk"},
-                color_discrete_sequence=["#2563eb"],
+        st.subheader("Action cards")
+        for rank, (_, row) in enumerate(top5.iterrows(), start=1):
+            expander_title = (
+                f"Priority {rank} | {format_employee_label(row)} | "
+                f"Risk {row['risk_score']:.0%} | {reason_display_label(row['probable_reason_group'])}"
             )
-            risk_histogram.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(risk_histogram, use_container_width=True)
+            with st.expander(expander_title, expanded=rank == 1):
+                top_cols = st.columns(3)
+                top_cols[0].metric("Risk", f"{row['risk_score']:.0%}")
+                top_cols[1].metric("Priority level", risk_priority_label(float(row["risk_score"])))
+                top_cols[2].metric("Likely reason", reason_display_label(row["probable_reason_group"]))
 
-        with right_col:
-            st.subheader("Top 5 employees at risk")
-            st.dataframe(build_top5_table(top5), use_container_width=True, hide_index=True)
+                why_col, actions_col = st.columns(2)
+                with why_col:
+                    st.markdown("**Why this employee is flagged**")
+                    for driver in row["risk_drivers"][:3]:
+                        st.markdown(f"- {driver}")
+                with actions_col:
+                    st.markdown("**What HR should do now**")
+                    for action in row["recommended_actions"][:3]:
+                        st.markdown(f"- {action}")
 
-            top5_chart_frame = top5.sort_values("risk_score", ascending=True).copy()
-            top5_chart_frame["Employee_Label"] = top5_chart_frame.apply(
-                lambda row: f"{row['Employee_Alias']} (EmpID: {int(row['EmpID'])})",
-                axis=1,
-            )
-            top5_chart = px.bar(
-                top5_chart_frame,
-                x="risk_score",
-                y="Employee_Label",
-                orientation="h",
-                text=top5_chart_frame["risk_score"].map(lambda x: f"{x:.0%}"),
-                color="probable_reason_group",
-                title="Top 5 active employees ranked by predicted turnover risk",
-            )
-            top5_chart.update_layout(height=360, margin=dict(l=10, r=10, t=40, b=10))
-            top5_chart.update_traces(textposition="outside")
-            st.plotly_chart(top5_chart, use_container_width=True)
+                st.caption(
+                    f"Closest historical reasons: {row['similar_raw_reasons']}. "
+                    f"Reason confidence: {row['reason_confidence']:.0%}."
+                )
+
+        with st.expander("Technical view: model comparison and overall score distribution"):
+            tech_left, tech_right = st.columns([1.0, 1.2])
+            with tech_left:
+                st.subheader("Model comparison used for deployment choice")
+                st.dataframe(benchmark, use_container_width=True, hide_index=True)
+            with tech_right:
+                risk_histogram = px.histogram(
+                    leaderboard,
+                    x="risk_score",
+                    nbins=20,
+                    title="Distribution of turnover risk across active employees",
+                    labels={"risk_score": "Predicted risk"},
+                    color_discrete_sequence=["#2563eb"],
+                )
+                risk_histogram.update_layout(height=320, margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(risk_histogram, use_container_width=True)
 
     with employee_tab:
-        st.subheader("Employee-level explanation and action plan")
+        st.subheader("Employee retention sheet")
 
         employee_options = {
             row["Employee_Alias"]: (
-                f"{row['Employee_Alias']} (EmpID: {int(row['EmpID'])})"
+                f"{format_employee_label(row)}"
                 f" - {row['Position']} ({row['Department']})"
             )
             for _, row in top5.iterrows()
         }
         selected_alias = st.selectbox(
-            "Select one employee from the top 5",
+            "Select one employee from the Top 5",
             options=list(employee_options.keys()),
             format_func=lambda alias: employee_options[alias],
         )
         selected = top5[top5["Employee_Alias"] == selected_alias].iloc[0]
 
+        metric_left, metric_mid, metric_right = st.columns(3)
+        metric_left.metric("Risk", f"{selected['risk_score']:.0%}")
+        metric_mid.metric("Priority level", risk_priority_label(float(selected["risk_score"])))
+        metric_right.metric("Likely reason", reason_display_label(selected["probable_reason_group"]))
+
         top_left, top_right = st.columns([0.8, 1.2])
         with top_left:
             st.plotly_chart(risk_gauge(float(selected["risk_score"])), use_container_width=True)
         with top_right:
-            st.subheader("Profile summary")
-            summary_frame = pd.DataFrame(
-                [
-                    ("Alias", selected["Employee_Alias"]),
-                    ("EmpID", int(selected["EmpID"])),
-                    ("Department", selected["Department"]),
-                    ("Position", selected["Position"]),
-                    ("Recruitment source", selected["RecruitmentSource"]),
-                    ("Tenure at review", f"{selected['TenureAtReview']:.1f} years"),
-                    ("Engagement survey", f"{selected['EngagementSurvey']:.1f}/5"),
-                    ("Satisfaction", f"{int(selected['EmpSatisfaction'])}/5"),
-                    ("Predicted reason", selected["probable_reason_group"]),
-                    ("Reason confidence", f"{selected['reason_confidence']:.0%}"),
-                    ("Closest historical reasons", selected["similar_raw_reasons"]),
-                ],
-                columns=["Field", "Value"],
+            st.subheader("Quick profile")
+            st.markdown(f"**Employee:** {format_employee_label(selected)}")
+            st.markdown(f"**Role:** {selected['Position']} | **Department:** {selected['Department']}")
+            st.markdown(f"**Recruitment source:** {selected['RecruitmentSource']}")
+            st.markdown(
+                f"**Tenure:** {selected['TenureAtReview']:.1f} years | "
+                f"**Engagement:** {selected['EngagementSurvey']:.1f}/5 | "
+                f"**Satisfaction:** {int(selected['EmpSatisfaction'])}/5"
             )
-            st.dataframe(summary_frame, use_container_width=True, hide_index=True)
+            st.markdown(f"**Likely reason:** {reason_display_label(selected['probable_reason_group'])}")
+            st.markdown(f"**Confidence in this reason:** {selected['reason_confidence']:.0%}")
+            st.markdown(f"**Closest historical reasons:** {selected['similar_raw_reasons']}")
 
         reason_col, actions_col = st.columns(2)
         with reason_col:
-            st.subheader("Probable resignation reason")
-            st.plotly_chart(reason_distribution_chart(selected["reason_distribution"]), use_container_width=True)
-            st.caption(
-                "This reason is estimated from similar historical voluntary departures and current risk drivers. "
-                "It should be treated as a hypothesis, not a certainty."
-            )
+            st.subheader("Why this employee may leave")
+            for driver in selected["risk_drivers"]:
+                st.markdown(f"- {driver}")
         with actions_col:
             st.subheader("Recommended HR actions")
             for action in selected["recommended_actions"]:
                 st.markdown(f"- {action}")
 
-        st.subheader("Main risk drivers")
-        for driver in selected["risk_drivers"]:
-            st.markdown(f"- {driver}")
-
-        votes_frame = pd.DataFrame(
-            {
-                "Historical raw reason": list(selected["raw_reason_votes"].keys()),
-                "Neighbor votes": list(selected["raw_reason_votes"].values()),
-            }
-        ).sort_values("Neighbor votes", ascending=False)
-        if not votes_frame.empty:
-            st.subheader("Closest historical departures")
-            votes_chart = px.bar(
-                votes_frame,
-                x="Neighbor votes",
-                y="Historical raw reason",
-                orientation="h",
-                text="Neighbor votes",
-                color="Neighbor votes",
-                color_continuous_scale="Purples",
+        with st.expander("Why this reason was suggested"):
+            st.plotly_chart(reason_distribution_chart(selected["reason_distribution"]), use_container_width=True)
+            st.caption(
+                "This reason is estimated from similar historical voluntary departures and current risk drivers. "
+                "It should be treated as a hypothesis, not a certainty."
             )
-            votes_chart.update_layout(height=280, margin=dict(l=10, r=10, t=10, b=10), coloraxis_showscale=False)
-            votes_chart.update_traces(textposition="outside")
-            st.plotly_chart(votes_chart, use_container_width=True)
+
+            votes_frame = pd.DataFrame(
+                {
+                    "Historical raw reason": list(selected["raw_reason_votes"].keys()),
+                    "Neighbor votes": list(selected["raw_reason_votes"].values()),
+                }
+            ).sort_values("Neighbor votes", ascending=False)
+            if not votes_frame.empty:
+                votes_chart = px.bar(
+                    votes_frame,
+                    x="Neighbor votes",
+                    y="Historical raw reason",
+                    orientation="h",
+                    text="Neighbor votes",
+                    color="Neighbor votes",
+                    color_continuous_scale="Blues",
+                )
+                votes_chart.update_layout(height=280, margin=dict(l=10, r=10, t=10, b=10), coloraxis_showscale=False)
+                votes_chart.update_traces(textposition="outside")
+                st.plotly_chart(votes_chart, use_container_width=True)
 
     with responsible_ai_tab:
         st.subheader("Responsible AI snapshot")
@@ -791,7 +837,7 @@ def main():
             """
             - **Explainable AI**: the dashboard relies on a Logistic Regression risk model so each employee can be explained.
             - **Ethical AI**: sensitive attributes are excluded from training and kept only for fairness audit.
-            - **Frugal AI**: Logistic Regression is retained as the main model because it remains highly competitive while being lighter and easier to govern than Random Forest.
+            - **Model choice**: Logistic Regression is retained as the deployed model because it balances strong performance and clear HR-facing explanations better than the comparator model.
             - **Reason engine**: probable reasons are inferred from similar historical leavers and should be interpreted as decision-support hypotheses.
             """
         )
@@ -817,8 +863,8 @@ def main():
                 use_container_width=True,
             )
 
-        st.subheader("Benchmark details")
-        st.dataframe(benchmark, use_container_width=True, hide_index=True)
+        with st.expander("Model evaluation details"):
+            st.dataframe(benchmark, use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":
