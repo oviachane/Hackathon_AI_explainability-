@@ -68,23 +68,9 @@ The model used is a Logistic Regression, chosen for its interpretability.
 
 * filtering to voluntary departures
 * handling missing values using imputation
-* feature engineering (e.g. tenure, relative salary)
+* feature engineering 
 * selection of relevant variables based on exploratory analysis
 
----
-
-## Explainability
-
-The system combines:
-
-* model-based prediction
-* HR-related signals (engagement, satisfaction, attendance, etc.)
-
-The final risk score is defined as:
-
-70% model prediction + 30% HR signals
-
-This approach ensures that predictions remain interpretable and aligned with business reasoning.
 
 ---
 
@@ -116,7 +102,7 @@ The project follows basic ethical AI principles:
 
 * exclusion of sensitive attributes such as gender, ethnicity, citizenship, and marital status
 * anonymization of employee identities
-* use as a decision-support tool, not an automated decision system
+* use as a decision-support tool not an automated decision system
 
 ---
 
