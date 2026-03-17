@@ -1,5 +1,17 @@
 # Hackathon AI Explainability
 
+## Group & members
+
+Group 23 :
+
+- Ovia CHANEMOUGANANDA
+- Noa LIEGEOIS
+- Alexandre FAU
+- Marie-Lou JODET 
+- Arshitha KANDUKURI
+
+## Summary
+
 This repository now contains two main parts:
 
 - the notebook `notebooks/eda.ipynb` for HR data exploration,
