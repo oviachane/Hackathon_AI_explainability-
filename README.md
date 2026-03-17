@@ -4,7 +4,7 @@
 
 Group 23
 
-* Ovia CHANEMOUGANANDA
+* Ovia CHANEMOUGANANDAM
 * Noa LIEGEOIS
 * Alexandre FAU
 * Marie-Lou JODET
