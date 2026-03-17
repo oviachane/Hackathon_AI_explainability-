@@ -27,3 +27,4 @@ python3 -m streamlit run app.py
 - Sensitive variables excluded from scoring: sex, ethnicity, citizenship, marital status, and similar fields.
 - Final displayed score: `70% model score + 30% actionable HR signals`.
 - Likely reason: combination of historical similarity with past voluntary exits and HR-oriented business rules.
+=======
